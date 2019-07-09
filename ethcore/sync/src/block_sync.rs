@@ -567,11 +567,11 @@ impl BlockDownloader {
 						"not canonical"
 					};
 					trace_sync!(self, "Block #{} is already in chain {:?} – {}", number, h, is_canonical);
-					imported.insert(h.clone());
 					self.block_imported(&h, number, &parent);
 				},
 				Err(EthcoreError::Import(ImportError::AlreadyQueued)) => {
 					trace_sync!(self, "Block already queued {:?}", h);
+					// Treat blocks in queue as imported in order not to start retraction too early
 					imported.insert(h.clone());
 					self.block_imported(&h, number, &parent);
 				},
