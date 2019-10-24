@@ -237,7 +237,16 @@ pub struct CallCreateExecutive<'a> {
 
 impl<'a> CallCreateExecutive<'a> {
 	/// Create a new call executive using raw data.
-	pub fn new_call_raw(params: ActionParams, info: &'a EnvInfo, machine: &'a Machine, schedule: &'a Schedule, factory: &'a VmFactory, depth: usize, stack_depth: usize, parent_static_flag: bool) -> Self {
+	pub fn new_call_raw(
+		params: ActionParams,
+		info: &'a EnvInfo,
+		machine: &'a Machine,
+		schedule: &'a Schedule,
+		factory: &'a VmFactory,
+		depth: usize,
+		stack_depth: usize,
+		parent_static_flag: bool
+	) -> Self {
 		trace!("Executive::call(params={:?}) self.env_info={:?}, parent_static={}", params, info, parent_static_flag);
 
 		let gas = params.gas;
@@ -267,7 +276,16 @@ impl<'a> CallCreateExecutive<'a> {
 	}
 
 	/// Create a new create executive using raw data.
-	pub fn new_create_raw(params: ActionParams, info: &'a EnvInfo, machine: &'a Machine, schedule: &'a Schedule, factory: &'a VmFactory, depth: usize, stack_depth: usize, static_flag: bool) -> Self {
+	pub fn new_create_raw(
+		params: ActionParams,
+		info: &'a EnvInfo,
+		machine: &'a Machine,
+		schedule: &'a Schedule,
+		factory: &'a VmFactory,
+		depth: usize,
+		stack_depth: usize,
+		static_flag: bool
+	) -> Self {
 		trace!("Executive::create(params={:?}) self.env_info={:?}, static={}", params, info, static_flag);
 
 		let gas = params.gas;
@@ -381,7 +399,13 @@ impl<'a> CallCreateExecutive<'a> {
 	/// then expected to call `resume_call` or `resume_create` to continue the execution.
 	///
 	/// Current-level tracing is expected to be handled by caller.
-	pub fn exec<B: 'a + StateBackend, T: Tracer, V: VMTracer>(mut self, state: &mut State<B>, substate: &mut Substate, tracer: &mut T, vm_tracer: &mut V) -> ExecutiveTrapResult<'a, FinalizationResult> {
+	pub fn exec<B: 'a + StateBackend, T: Tracer, V: VMTracer>(
+		mut self,
+		state: &mut State<B>,
+		substate: &mut Substate,
+		tracer: &mut T,
+		vm_tracer: &mut V
+	) -> ExecutiveTrapResult<'a, FinalizationResult> {
 		match self.kind {
 			CallCreateExecutiveKind::Transfer(ref params) => {
 				assert!(!self.is_create);
