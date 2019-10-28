@@ -17,21 +17,23 @@
 use std::cmp;
 use std::collections::{HashSet, BTreeMap, VecDeque};
 use std::str::FromStr;
+use std::str::from_utf8;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Weak};
-use std::time::{Instant, Duration};
+use std::io::{BufReader, BufRead};
+use std::time::{Duration, Instant};
 
 use blockchain::{BlockReceipts, BlockChain, BlockChainDB, BlockProvider, TreeRoute, ImportRoute, TransactionAddress, ExtrasInsert, BlockNumberKey};
 use bytes::Bytes;
-use call_contract::{CallContract, RegistryInfo};
-use ethcore_miner::pool::VerifiedTransaction;
-use ethereum_types::{H256, H264, Address, U256};
-use evm::Schedule;
+use rlp::PayloadInfo;
+use bytes::ToPretty;
+use error::Error;
+use ethereum_types::{Address, H256, H264, U256};
 use hash::keccak;
-use io::IoChannel;
+use call_contract::CallContract;
+use ethcore_miner::pool::VerifiedTransaction;
 use itertools::Itertools;
-use journaldb;
-use kvdb::{DBValue, KeyValueDB, DBTransaction};
+use kvdb::{DBTransaction, DBValue, KeyValueDB};
 use parking_lot::{Mutex, RwLock};
 use rand::OsRng;
 use types::transaction::{self, LocalizedTransaction, UnverifiedTransaction, SignedTransaction, Action};
@@ -43,6 +45,7 @@ use types::log_entry::LocalizedLogEntry;
 use types::receipt::{Receipt, LocalizedReceipt};
 use types::{BlockNumber, header::{Header, ExtendedHeader}};
 use vm::{EnvInfo, LastHashes};
+use types::data_format::DataFormat;
 
 use block::{LockedBlock, Drain, ClosedBlock, OpenBlock, enact_verified, SealedBlock};
 use client::ancient_import::AncientVerifier;
@@ -51,8 +54,9 @@ use client::{
 	ReopenBlock, PrepareOpenBlock, ScheduleInfo, ImportSealedBlock,
 	BroadcastProposalBlock, ImportBlock, StateOrBlock, StateInfo, StateClient, Call,
 	AccountData, BlockChain as BlockChainTrait, BlockProducer, SealedBlockImporter,
-	ClientIoMessage, BlockChainReset
+	ClientIoMessage, BlockChainReset, ImportExportBlocks
 };
+use rustc_hex::FromHex;
 use client::{
 	BlockId, TransactionId, UncleId, TraceId, ClientConfig, BlockChainClient,
 	TraceFilter, CallAnalytics, Mode,
@@ -80,7 +84,9 @@ use verification::queue::kind::blocks::Unverified;
 use verification::{PreverifiedBlock, Verifier, BlockQueue};
 use verification;
 use ansi_term::Colour;
-
+use call_contract::RegistryInfo;
+use io::IoChannel;
+use vm::Schedule;
 // re-export
 pub use types::blockchain_info::BlockChainInfo;
 pub use types::block_status::BlockStatus;
@@ -2565,6 +2571,116 @@ impl Drop for Client {
 		} else {
 			warn!(target: "shutdown", "unable to get mut ref for engine for shutdown.");
 		}
+	}
+}
+
+impl ImportExportBlocks for Client {
+	fn export_blocks<'a>(
+		&self,
+		mut out: Box<dyn std::io::Write + 'a>,
+		from: BlockId,
+		to: BlockId,
+		format: Option<DataFormat>
+	) -> Result<(), String> {
+		let from = self.block_number(from).ok_or("Starting block could not be found")?;
+		let to = self.block_number(to).ok_or("End block could not be found")?;
+		let format = format.unwrap_or_default();
+
+		for i in from..=to {
+			if i % 10000 == 0 {
+				info!("#{}", i);
+			}
+			let b = self.block(BlockId::Number(i)).ok_or("Error exporting incomplete chain")?.into_inner();
+			match format {
+				DataFormat::Binary => {
+					out.write(&b).map_err(|e| format!("Couldn't write to stream. Cause: {}", e))?;
+				}
+				DataFormat::Hex => {
+					out.write_fmt(format_args!("{}\n", b.pretty())).map_err(|e| format!("Couldn't write to stream. Cause: {}", e))?;
+				}
+			}
+		}
+		Ok(())
+	}
+
+	fn import_blocks<'a>(
+		&self,
+		mut source: Box<dyn std::io::Read + 'a>,
+		format: Option<DataFormat>
+	) -> Result<(), String> {
+		const READAHEAD_BYTES: usize = 8;
+
+		let mut first_bytes: Vec<u8> = vec![0; READAHEAD_BYTES];
+		let mut first_read = 0;
+
+		let format = match format {
+			Some(format) => format,
+			None => {
+				first_read = source.read(&mut first_bytes).map_err(|_| "Error reading from the file/stream.")?;
+				match first_bytes[0] {
+					0xf9 => DataFormat::Binary,
+					_ => DataFormat::Hex,
+				}
+			}
+		};
+
+		let do_import = |bytes: Vec<u8>| {
+			let block = Unverified::from_rlp(bytes).map_err(|_| "Invalid block rlp")?;
+			let number = block.header.number();
+			while self.queue_info().is_full() { std::thread::sleep(Duration::from_secs(1)); }
+			match self.import_block(block) {
+				Err(Error(EthcoreErrorKind::Import(ImportErrorKind::AlreadyInChain), _)) => {
+					trace!("Skipping block #{}: already in chain.", number);
+				}
+				Err(e) => {
+					return Err(format!("Cannot import block #{}: {:?}", number, e));
+				},
+				Ok(_) => {},
+			}
+			Ok(())
+		};
+
+		match format {
+			DataFormat::Binary => {
+				loop {
+					let (mut bytes, n) = if first_read > 0 {
+						(first_bytes.clone(), first_read)
+					} else {
+						let mut bytes = vec![0; READAHEAD_BYTES];
+						let n = source.read(&mut bytes)
+							.map_err(|err| format!("Error reading from the file/stream: {:?}", err))?;
+						(bytes, n)
+					};
+					if n == 0 { break; }
+					first_read = 0;
+					let s = PayloadInfo::from(&bytes)
+						.map_err(|e| format!("Invalid RLP in the file/stream: {:?}", e))?.total();
+					bytes.resize(s, 0);
+					source.read_exact(&mut bytes[n..])
+						.map_err(|err| format!("Error reading from the file/stream: {:?}", err))?;
+					do_import(bytes)?;
+				}
+			}
+			DataFormat::Hex => {
+				for line in BufReader::new(source).lines() {
+					let s = line
+						.map_err(|err| format!("Error reading from the file/stream: {:?}", err))?;
+					let s = if first_read > 0 {
+						from_utf8(&first_bytes)
+							.map_err(|err| format!("Invalid UTF-8: {:?}", err))?
+							.to_owned() + &(s[..])
+					} else {
+						s
+					};
+					first_read = 0;
+					let bytes = s.from_hex()
+						.map_err(|err| format!("Invalid hex in file/stream: {:?}", err))?;
+					do_import(bytes)?;
+				}
+			}
+		};
+		self.flush_queue();
+		Ok(())
 	}
 }
 

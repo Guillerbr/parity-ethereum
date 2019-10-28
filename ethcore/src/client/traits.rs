@@ -38,6 +38,7 @@ use types::ids::*;
 use types::log_entry::LocalizedLogEntry;
 use types::pruning_info::PruningInfo;
 use types::receipt::LocalizedReceipt;
+use types::data_format::DataFormat;
 use types::trace_filter::Filter as TraceFilter;
 use vm::LastHashes;
 
@@ -477,3 +478,30 @@ pub trait BlockChainReset {
 	/// reset to best_block - n
 	fn reset(&self, num: u32) -> Result<(), String>;
 }
+
+/// Provides a method for importing/exporting blocks
+pub trait ImportExportBlocks {
+    /// Export blocks to destination, with the given from, to and format argument.
+    /// destination could be a file or stdout.
+    /// If the format is hex, each block is written on a new line.
+    /// For binary exports, all block data is written to the same line.
+	fn export_blocks<'a>(
+        &self,
+        destination: Box<dyn std::io::Write + 'a>,
+        from: BlockId,
+        to: BlockId,
+        format: Option<DataFormat>
+    ) -> Result<(), String>;
+
+	/// Import blocks from destination, with the given format argument
+	/// Source could be a file or stdout.
+	/// For hex format imports, it attempts to read the blocks on a line by line basis.
+	/// For binary format imports, reads the 8 byte RLP header in order to decode the block
+	/// length to be read.
+	fn import_blocks<'a>(
+		&self,
+		source: Box<dyn std::io::Read + 'a>,
+		format: Option<DataFormat>
+	) -> Result<(), String>;
+}
+

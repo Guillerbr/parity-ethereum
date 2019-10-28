@@ -50,7 +50,8 @@ use ethcore_private_tx::{ProviderConfig, EncryptorConfig};
 use secretstore::{NodeSecretKey, Configuration as SecretStoreConfiguration, ContractAddress as SecretStoreContractAddress};
 use updater::{UpdatePolicy, UpdateFilter, ReleaseTrack};
 use run::RunCmd;
-use blockchain::{BlockchainCmd, ImportBlockchain, ExportBlockchain, KillBlockchain, ExportState, DataFormat, ResetBlockchain};
+use types::data_format::DataFormat;
+use blockchain::{BlockchainCmd, ImportBlockchain, ExportBlockchain, KillBlockchain, ExportState, ResetBlockchain};
 use export_hardcoded_sync::ExportHsyncCmd;
 use presale::ImportWallet;
 use account::{AccountCmd, NewAccount, ListAccounts, ImportAccounts, ImportFromGethAccounts};
@@ -1200,9 +1201,9 @@ mod tests {
 	use miner::pool::PrioritizationStrategy;
 	use parity_rpc::NetworkSettings;
 	use updater::{UpdatePolicy, UpdateFilter, ReleaseTrack};
-
+	use types::data_format::DataFormat;
 	use account::{AccountCmd, NewAccount, ImportAccounts, ListAccounts};
-	use blockchain::{BlockchainCmd, ImportBlockchain, ExportBlockchain, DataFormat, ExportState};
+	use blockchain::{BlockchainCmd, ImportBlockchain, ExportBlockchain, ExportState};
 	use cli::Args;
 	use dir::{Directories, default_hypervisor_path};
 	use helpers::{default_network_config};
