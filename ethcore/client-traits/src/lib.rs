@@ -229,8 +229,8 @@ pub trait BlockChainClient:
 	/// Get block total difficulty.
 	fn block_total_difficulty(&self, id: BlockId) -> Option<U256>;
 
-	/// Checks, if block with fork is being imported
-	fn processing_fork(&self) -> bool;
+	/// Checks, if block with fork is being imported, and wait for import's completion
+	fn process_fork(&self);
 
 	/// Attempt to get address storage root at given block.
 	/// May not fail on BlockId::Latest.

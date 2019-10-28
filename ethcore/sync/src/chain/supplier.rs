@@ -21,7 +21,7 @@ use crate::sync_io::SyncIo;
 use bytes::Bytes;
 use enum_primitive::FromPrimitive;
 use ethereum_types::H256;
-use log::{debug, trace, warn};
+use log::{debug, trace};
 use network::{self, PeerId};
 use parking_lot::RwLock;
 use rlp::{Rlp, RlpStream};
@@ -150,13 +150,9 @@ impl SyncSupplier {
 
 	/// Respond to GetBlockHeaders request
 	fn return_block_headers(io: &dyn SyncIo, r: &Rlp, peer_id: PeerId) -> RlpResponseResult {
-		if io.chain().processing_fork() {
-			// Cannot provide blocks headers until such import is finished
-			let last_hash = io.chain().chain_info().best_block_hash;
-			trace!(target: "sync", "{} -> GetBlockHeaders rejected while processing probable fork block with current best block: {})", peer_id, last_hash);
-			warn!("{} -> GetBlockHeaders rejected while processing probable fork block with current best block: {})", peer_id, last_hash); //REMOVE before merge
-			return Ok(Some((BlockHeadersPacket.id(), RlpStream::new_list(0))))
-		}
+		// Check, if blocks with fork are being imported
+		// This call will be waiting on import_lock mutex, if they are
+		io.chain().process_fork();
 		let payload_soft_limit = io.payload_soft_limit();
 		// Packet layout:
 		// [ block: { P , B_32 }, maxHeaders: P, skip: P, reverse: P in { 0 , 1 } ]
