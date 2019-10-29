@@ -298,6 +298,7 @@ impl Importer {
 			if blocks.is_empty() {
 				return 0;
 			}
+			warn!("Client; start verified blocks insertion (len) {}", blocks.len());
 			trace_time!("import_verified_blocks");
 			let start = Instant::now();
 
@@ -305,6 +306,8 @@ impl Importer {
 				let header = block.header.clone();
 				let bytes = block.bytes.clone();
 				let hash = header.hash();
+
+				warn!("Client; Inserting verified block {}", hash);
 
 				let is_invalid = invalid_blocks.contains(header.parent_hash());
 				if is_invalid {
@@ -314,6 +317,7 @@ impl Importer {
 
 				match self.check_and_lock_block(&bytes, block, client) {
 					Ok((closed_block, pending)) => {
+						warn!("Block checked and locked");
 						imported_blocks.push(hash);
 						let transactions_len = closed_block.transactions.len();
 						let route = self.commit_block(closed_block, &header, encoded::Block::new(bytes), pending, client);
@@ -321,6 +325,7 @@ impl Importer {
 						client.report.write().accrue_block(&header, transactions_len);
 					},
 					Err(err) => {
+						warn!("Error occured {}", err);
 						self.bad_blocks.report(bytes, format!("{:?}", err));
 						invalid_blocks.insert(hash);
 					},
@@ -328,6 +333,7 @@ impl Importer {
 			}
 
 			let imported = imported_blocks.len();
+			warn!("Client; inserted to db verified blocks (len) {}", imported);
 			let invalid_blocks = invalid_blocks.into_iter().collect::<Vec<H256>>();
 
 			if !invalid_blocks.is_empty() {
@@ -506,6 +512,8 @@ impl Importer {
 		let parent = header.parent_hash();
 		let chain = client.chain.read();
 		let mut is_finalized = false;
+
+		warn!("Client; commit_block to db {}", hash);
 
 		// Commit results
 		let block = block.drain();
@@ -1456,6 +1464,8 @@ impl ImportBlock for Client {
 			return Err(EthcoreError::Import(ImportError::AlreadyInChain));
 		}
 
+		warn!("Client; unverified block import to queue started: {}", unverified.header.hash());
+
 		let status = self.block_status(BlockId::Hash(unverified.parent_hash()));
 		if status == BlockStatus::Unknown {
 			return Err(EthcoreError::Block(BlockError::UnknownParent(unverified.parent_hash())));
@@ -1474,6 +1484,7 @@ impl ImportBlock for Client {
 				if let Some((raw, hash, difficulty)) = raw {
 					self.notify(move |n| n.block_pre_import(&raw, &hash, &difficulty));
 				}
+				warn!("Client; block imported to the queue: {}", hash);
 				Ok(hash)
 			},
 			// we only care about block errors (not import errors)
